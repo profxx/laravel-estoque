@@ -24,7 +24,7 @@ class CreateMovimento extends CreateRecord
         $produto = Produto::find($data['produto_id']);
         $quantidadeMovimento = (int)$data['quantidade'];
 
-        if ($data['tipo'] === 'saida') {
+        if ($data['tipo'] === 'saida' || $data['tipo'] === 's') {
             if ($produto->quantidade < $quantidadeMovimento) {
                 throw ValidationException::withMessages([
                     'quantidade' => 'A quantidade de saída é maior que o estoque atual (' . $produto->quantidade . ').',
@@ -46,7 +46,7 @@ class CreateMovimento extends CreateRecord
         // **AQUI ESTÁ A CORREÇÃO:**
         // Como agora estamos tratando `$movimento->tipo` como uma string simples (texto),
         // comparamos o valor diretamente, sem usar `->value`.
-        if ($movimento->tipo === 'entrada') {
+        if ($movimento->tipo === 'entrada' || $movimento->tipo === 'e') {
             $produto->quantidade += $movimento->quantidade;
         } else {
             $produto->quantidade -= $movimento->quantidade;
