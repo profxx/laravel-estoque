@@ -2,7 +2,6 @@
 
 namespace App\Filament\Resources\Movimentos\Pages;
 
-// CORREÇÃO 1: O "use" statement agora aponta para o namespace correto do seu Resource.
 use App\Filament\Resources\Movimentos\MovimentoResource;
 use App\Models\Produto;
 use Filament\Notifications\Notification;
@@ -11,57 +10,62 @@ use Illuminate\Validation\ValidationException;
 
 class CreateMovimento extends CreateRecord
 {
-    // CORREÇÃO 2: A referência da classe do Resource foi atualizada para o namespace correto.
-    // O Laravel agora saberá exatamente onde encontrar seu MovimentoResource.
     protected static string $resource = MovimentoResource::class;
 
     /**
-     * MÉTODO "GANCHO" (HOOK): mutateFormDataBeforeCreate
-     * (O código aqui permanece o mesmo, pois a validação já usa a string 'saida')
+     * Valida o estoque antes de criar o registro.
      */
-    protected function mutateFormDataBeforeCreate(array $data): array
+    protected function beforeCreate(): void
     {
-        $produto = Produto::find($data['produto_id']);
-        $quantidadeMovimento = (int)$data['quantidade'];
+        $data = $this->data;
+        $produto = Produto::find($data['produto_id'] ?? null);
 
-        if ($data['tipo'] === 'saida' || $data['tipo'] === 's') {
-            if ($produto->quantidade < $quantidadeMovimento) {
-                throw ValidationException::withMessages([
-                    'quantidade' => 'A quantidade de saída é maior que o estoque atual (' . $produto->quantidade . ').',
-                ]);
-            }
+        if (!$produto) {
+            throw ValidationException::withMessages([
+                'produto_id' => 'O produto selecionado não foi encontrado.',
+            ]);
         }
-        return $data;
+
+        $quantidadeMovimento = (int) ($data['quantidade'] ?? 0);
+
+        if ($data['tipo'] === 'saida' && $produto->quantidade < $quantidadeMovimento) {
+            throw ValidationException::withMessages([
+                'quantidade' => "A quantidade de saída é maior que o estoque atual ({$produto->quantidade}).",
+            ]);
+        }
     }
 
     /**
-     * MÉTODO "GANCHO" (HOOK): afterCreate
+     * Atualiza o estoque e notifica após criar o registro.
      */
     protected function afterCreate(): void
     {
         $movimento = $this->getRecord();
         $produto = $movimento->produto;
 
-        // Passo 2: Atualizar a quantidade de estoque do produto.
-        // **AQUI ESTÁ A CORREÇÃO:**
-        // Como agora estamos tratando `$movimento->tipo` como uma string simples (texto),
-        // comparamos o valor diretamente, sem usar `->value`.
-        if ($movimento->tipo === 'entrada' || $movimento->tipo === 'e') {
-            $produto->quantidade += $movimento->quantidade;
-        } else {
-            $produto->quantidade -= $movimento->quantidade;
+        if (!$produto) {
+            return;
         }
 
-        $produto->save();
+        $quantidade = (int) $movimento->quantidade;
 
+        if ($movimento->tipo === 'entrada') {
+            $produto->increment('quantidade', $quantidade);
+        } else {
+            $produto->decrement('quantidade', $quantidade);
+        }
+
+        // Atualiza a instância do model para pegar o valor correto do banco
+        $produto->refresh();
+
+        // Dispara notificação caso atinja o estoque mínimo
         if ($produto->quantidade <= $produto->estoquemin) {
             Notification::make()
                 ->title('Alerta de Estoque Baixo!')
-                ->body("O produto '{$produto->nome}' atingiu o estoque mínimo.")
+                ->body("O produto '{$produto->nome}' atingiu o estoque mínimo ({$produto->quantidade} restantes).")
                 ->warning()
                 ->persistent()
                 ->send();
         }
     }
 }
-
